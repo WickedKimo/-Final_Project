@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>雲端硬碟</title>
+</head>
+<body>
+  <h2>歡迎，{{ session['username'] }}！</h2>
+  <p>這是您的雲端硬碟。</p>
+
+  <h3>檔案上傳：</h3>
+  <form action="/upload" method="POST" enctype="multipart/form-data">
+    <label for="file">選擇檔案:</label><br />
+    <input type="file" id="file" name="file" required /><br />
+    <button type="submit">上傳檔案</button>
+  </form>
+
+  <h3>已上傳檔案列表：</h3>
+  <ul>
+    {% for file in files %}
+      <li>
+        {{ file }}
+        <!-- 下載按鈕 -->
+        <form action="/download" method="POST" style="display:inline;">
+          <input type="hidden" name="filename" value="{{ file }}">
+          <button type="submit">下載</button>
+        </form>
+        <!-- 刪除按鈕 -->
+        <form action="/delete" method="POST" style="display:inline;">
+          <input type="hidden" name="delete_filename" value="{{ file }}">
+          <button type="submit">刪除</button>
+        </form>
+      </li>
+    {% else %}
+      <li>目前沒有檔案</li>
+    {% endfor %}
+  </ul>
+
+  <form action="/logout" method="POST">
+    <button type="submit">登出</button>
+  </form>
+</body>
+</html>

@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>OTP QR Code</title>
+</head>
+<body>
+  <h2>請用 Google Authenticator 掃描以下 QR Code</h2>
+  <img src="data:image/png;base64,{{ qr_b64 }}" alt="QR Code"><br><br>
+
+  <h3>或輸入以下設定金鑰：</h3>
+  <p><strong>{{ otp_secret }}</strong></p>
+
+  <p><a href="/login">完成設定後登入</a></p>
+</body>
+</html>
