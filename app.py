@@ -10,7 +10,11 @@ from psycopg2.extras import RealDictCursor
 import cloudinary.api
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
+<<<<<<< HEAD
 load_dotenv()  
+=======
+load_dotenv()
+>>>>>>> 77d2cd986c7ffffc754161efbfd004e2e01941a0
 
 cloudinary.config(
     cloud_name=os.environ['CLOUDINARY_CLOUD_NAME'],
@@ -18,11 +22,11 @@ cloudinary.config(
     api_secret=os.environ['CLOUDINARY_API_SECRET']
 )
 
-app = Flask(__name__)
-app.secret_key = "secret"
-
 # 連線到 PostgreSQL（Render 提供 DATABASE_URL）
 DATABASE_URL = os.environ.get("DATABASE_URL")
+
+app = Flask(__name__)
+app.secret_key = "secret"
 
 def get_db_connection():
     return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
