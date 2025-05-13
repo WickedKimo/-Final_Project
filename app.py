@@ -9,6 +9,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import cloudinary.api
 from werkzeug.utils import secure_filename
+from dotenv import load_dotenv
+load_dotenv()  
 
 cloudinary.config(
     cloud_name=os.environ['CLOUDINARY_CLOUD_NAME'],
@@ -128,15 +130,15 @@ def verify_otp():
 
         if totp.verify(otp_code):
             session["authenticated"] = True
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("WebCrypto_API"))
         else:
             flash("OTP 錯誤")
             return redirect(url_for("verify_otp"))
 
     return render_template("otp_verification.html")
 
-@app.route("/dashboard")
-def dashboard():
+@app.route("/WebCrypto_API")
+def WebCrypto_API():
     if not session.get("authenticated"):
         return redirect(url_for("login"))
 
@@ -147,7 +149,7 @@ def dashboard():
     except Exception:
         files = []
 
-    return render_template("dashboard.html", files=files)
+    return render_template("WebCrypto_API.html", files=files)
 
 @app.route("/logout", methods=["POST"])
 def logout():
@@ -164,7 +166,7 @@ def upload():
         filename = secure_filename(file.filename)
         result = cloudinary.uploader.upload(file, public_id=f"{session['username']}/{filename}")
         flash("檔案上傳成功")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("WebCrypto_API"))
 
 @app.route("/download", methods=["POST"])
 def download():
@@ -179,7 +181,7 @@ def download():
         return redirect(result)
     except Exception:
         flash("檔案不存在")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("WebCrypto_API"))
 
 @app.route("/delete", methods=["POST"])
 def delete():
@@ -193,7 +195,7 @@ def delete():
         flash("檔案已刪除")
     except Exception:
         flash("刪除失敗")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("WebCrypto_API"))
 
 if __name__ == "__main__":
     init_db()

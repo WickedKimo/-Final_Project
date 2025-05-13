@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+  <title>WebCrypto CSE + KMS</title>
+</head>
+<body>
+  <h3>WebCrypto + 模擬 KMS 公鑰</h3>
+  <button onclick="runDemo()">Run Demo</button>
+  <pre id="output"></pre>
+  <input type="file" id="fileInput" />
+  <script>
+    async function runDemo() {
+      const output = document.getElementById("output");
+
+      // 1. 產生 AES-GCM 對稱金鑰
+      const aesKey = await window.crypto.subtle.generateKey(
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt", "wrapKey"]
+      );
+      output.textContent += "✅ AES 金鑰已產生\n";
+
+      // 讀取 server (KMS) 公鑰      demo版由本地生成
+    
+      const res = await fetch('/static/public_key.txt');
+      output.textContent += "✅ 成功得到公鑰\n";
+      console.log("有進到 fetch 段落！");
+      const pem = await res.text();
+      output.textContent += "✅ test1\n";
+      console.log(pem);   
+
+      const pemHeader = "-----BEGIN PUBLIC KEY-----";
+      const pemFooter = "-----END PUBLIC KEY-----";
+
+      const pemHeaderIndex = pem.indexOf(pemHeader);
+      const pemFooterIndex = pem.indexOf(pemFooter);
+
+      if (pemHeaderIndex === -1 || pemFooterIndex === -1) {
+      throw new Error("找不到公鑰 header/footer");
+      }
+    
+        const start = pem.indexOf(pemHeader) + pemHeader.length;
+        const end = pem.indexOf(pemFooter);
+
+        let pemContents = pem.substring(start, end);
+        pemContents = pemContents.replace(/\s+/g, "");
+
+        console.log("PEM contents (Base64):", pemContents);
+
+      const binaryDerString = window.atob(pemContents);
+      output.textContent += "✅ test1\n";
+      const binaryDer = new Uint8Array(binaryDerString.length);
+      for (let i = 0; i < binaryDerString.length; i++) {
+      binaryDer[i] = binaryDerString.charCodeAt(i);
+      }
+  
+      console.log("Binary DER data:", binaryDer);
+      output.textContent += "✅ test1\n";
+      let publicKey;  // 🔵 宣告在外層
+  
+      try {
+      publicKey = await window.crypto.subtle.importKey(
+          "spki",
+          binaryDer.buffer,
+          { name: "RSA-OAEP", hash: "SHA-256" },
+          false,
+          ["encrypt", "wrapKey"]
+      );
+      console.log("Public key imported successfully", publicKey);
+      } catch (error) {
+      console.error("Error importing public key: ", error);
+      return; // 如果匯入失敗，提前結束 function，避免後面還要用
+      }
+      output.textContent += "✅ test1\n";
+      output.textContent += "✅ KMS 公鑰匯入完成\n";
+
+      // 3. 將 AES 金鑰加密 (wrap)
+      const wrappedKey = await window.crypto.subtle.wrapKey(
+        "raw",
+        aesKey,
+        publicKey,
+        { name: "RSA-OAEP" }
+      );
+      output.textContent += "✅ AES 金鑰已用 KMS 公鑰包裝\n";
+
+        // 4. 用 AES 金鑰加密資料
+        const fileInput = document.getElementById("fileInput");
+        const file = fileInput.files[0];
+
+        if (!file) {
+            output.textContent += "❌ 請先選擇一個檔案\n";
+            return;
+        }
+
+        // 讀取檔案內容
+        const reader = new FileReader();
+        reader.onload = async function () {
+            const fileContent = reader.result; // ArrayBuffer
+
+            // 產生 IV
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+            try {
+                // 用 AES 金鑰加密檔案內容
+                const ciphertext = await window.crypto.subtle.encrypt(
+                    { name: "AES-GCM", iv: iv },
+                    aesKey,
+                    fileContent
+                );
+
+                output.textContent += "✅ 檔案內容已加密\n";
+
+                // 加密完成後將 ciphertext 轉為 Uint8Array
+                const ciphertextArray = new Uint8Array(ciphertext);
+
+                // 建立 Blob (用 octet-stream 表示二進位檔)
+                const blob = new Blob([ciphertextArray], { type: "application/octet-stream" });
+
+                // 建立下載連結
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "encrypted_file.bin";  // 檔案名稱你可以自己改
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+                // 釋放 URL 資源
+                URL.revokeObjectURL(url);
+
+                output.textContent += "✅ 已觸發下載加密檔案\n";
+            } catch (error) {
+                output.textContent += "❌ 加密過程中發生錯誤\n";
+                console.error(error);
+            }
+        };
+
+        // 讀成 ArrayBuffer（注意！這裡是 readAsArrayBuffer）
+        reader.readAsArrayBuffer(file);
+
+      // 顯示結果 (base64)
+      //const base64Ciphertext = btoa(String.fromCharCode(...new Uint8Array(ciphertext)));
+      //output.textContent += `\nCiphertext (Base64): ${base64Ciphertext}\n`;
+      //output.textContent += `Wrapped AES Key (Base64): ${btoa(String.fromCharCode(...new Uint8Array(wrappedKey)))}\n`;
+    }
+  </script>
+</body>
+</html>
