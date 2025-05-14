@@ -10,11 +10,7 @@ from psycopg2.extras import RealDictCursor
 import cloudinary.api
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
-<<<<<<< HEAD
-load_dotenv()  
-=======
 load_dotenv()
->>>>>>> 77d2cd986c7ffffc754161efbfd004e2e01941a0
 
 cloudinary.config(
     cloud_name=os.environ['CLOUDINARY_CLOUD_NAME'],

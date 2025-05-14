@@ -100,7 +100,6 @@
 
             // 產生 IV
             const iv = window.crypto.getRandomValues(new Uint8Array(12));
-
             try {
                 // 用 AES 金鑰加密檔案內容
                 const ciphertext = await window.crypto.subtle.encrypt(
@@ -130,6 +129,31 @@
                 URL.revokeObjectURL(url);
 
                 output.textContent += "✅ 已觸發下載加密檔案\n";
+                
+                // ⭐⭐⭐【解密段落】⭐⭐⭐
+                const decryptedContent = await window.crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: iv },
+                    aesKey,
+                    ciphertext
+                );
+
+                output.textContent += "✅ 已成功解密檔案\n";
+
+                // 解密完成後將解密內容轉為 Blob (用原本 type)
+                const decryptedBlob = new Blob([decryptedContent], { type: file.type });
+
+                // 建立下載連結 (解密檔)
+                const decryptedUrl = URL.createObjectURL(decryptedBlob);
+                const aDecrypted = document.createElement("a");
+                aDecrypted.href = decryptedUrl;
+                aDecrypted.download = "decrypted_file" + file.name;  // 給解密檔命名
+                document.body.appendChild(aDecrypted);
+                aDecrypted.click();
+                document.body.removeChild(aDecrypted);
+                URL.revokeObjectURL(decryptedUrl);
+
+                output.textContent += "✅ 已觸發下載解密檔案\n";
+                
             } catch (error) {
                 output.textContent += "❌ 加密過程中發生錯誤\n";
                 console.error(error);
@@ -138,11 +162,6 @@
 
         // 讀成 ArrayBuffer（注意！這裡是 readAsArrayBuffer）
         reader.readAsArrayBuffer(file);
-
-      // 顯示結果 (base64)
-      //const base64Ciphertext = btoa(String.fromCharCode(...new Uint8Array(ciphertext)));
-      //output.textContent += `\nCiphertext (Base64): ${base64Ciphertext}\n`;
-      //output.textContent += `Wrapped AES Key (Base64): ${btoa(String.fromCharCode(...new Uint8Array(wrappedKey)))}\n`;
     }
   </script>
 </body>
