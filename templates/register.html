@@ -3,16 +3,77 @@
 <head>
   <meta charset="UTF-8" />
   <title>註冊帳號</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+    }
+    form {
+      margin-bottom: 20px;
+    }
+    #qrcode {
+      margin-top: 20px;
+      padding: 10px;
+      border: 2px dashed #ccc;
+      display: inline-block;
+    }
+    #qrcode-title {
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    .error {
+      color: red;
+      margin-top: 10px;
+    }
+  </style>
 </head>
 <body>
   <h2>註冊帳號</h2>
-  <form action="/register" method="POST">
-    <label for="username">帳號:</label><br />
+  <form id="registerForm">
+    <label for="username">帳號名稱:</label><br />
     <input type="text" id="username" name="username" required /><br />
     <label for="password">密碼:</label><br />
     <input type="password" id="password" name="password" required /><br />
     <button type="submit">註冊</button>
   </form>
+
+  <div id="errorMessage" class="error" style="display: none;"></div>
+
   <p>已經有帳號? <a href="/login">點此登入</a></p>
+
+  <script>
+    const form = document.getElementById("registerForm");
+    const errorMessageDiv = document.getElementById("errorMessage");
+
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+
+      const res = await fetch("/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ username, password })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        // 顯示 QR Code
+        document.body.innerHTML = `
+          <h2>註冊成功</h2>
+          <div id="qrcode">
+            <div id="qrcode-title">請掃描以下 QR Code 設定 2FA：</div>
+            <img src="data:image/png;base64,${data.qr_b64}" alt="QR Code" />
+          </div>
+          <p><a href="/login">前往登入</a></p>
+        `;
+      } else {
+        errorMessageDiv.innerText = data.error;
+        errorMessageDiv.style.display = "block";
+      }
+    });
+  </script>
 </body>
 </html>
