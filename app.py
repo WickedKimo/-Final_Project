@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session, url_for, flash
+from flask import Flask, render_template, request, redirect, session, url_for, flash, jsonify
 import pyotp
 import bcrypt
 import qrcode
@@ -7,33 +7,29 @@ import io
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import cloudinary.api
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
-<<<<<<< HEAD
-load_dotenv()  
-=======
 load_dotenv()
->>>>>>> 77d2cd986c7ffffc754161efbfd004e2e01941a0
 
-cloudinary.config(
-    cloud_name=os.environ['CLOUDINARY_CLOUD_NAME'],
-    api_key=os.environ['CLOUDINARY_API_KEY'],
-    api_secret=os.environ['CLOUDINARY_API_SECRET']
-)
 
-# 連線到 PostgreSQL（Render 提供 DATABASE_URL）
-DATABASE_URL = os.environ.get("DATABASE_URL")
+# 連線到 PostgreSQL（Render 提供 USERDB_URL 和 USERDATADB_URL）
+USERDB_URL = os.environ.get("USERDB_URL")
+USERDATADB_URL = os.environ.get("USERDATADB_URL")
 
 app = Flask(__name__)
 app.secret_key = "secret"
 
-def get_db_connection():
-    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+# 用於 USERDB 的資料庫連線
+def get_user_db_connection():
+    return psycopg2.connect(USERDB_URL, cursor_factory=RealDictCursor)
 
-# 初始化 users 資料表
-def init_db():
-    with get_db_connection() as conn:
+# 用於 USERDATADB 的資料庫連線
+def get_userdata_db_connection():
+    return psycopg2.connect(USERDATADB_URL, cursor_factory=RealDictCursor)
+
+# 初始化 USERDB 資料表
+def init_user_db():
+    with get_user_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS users (
@@ -44,13 +40,31 @@ def init_db():
             ''')
             conn.commit()
 
+# 初始化 USERDATADB 資料表
+def init_userdata_db():
+    with get_userdata_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS files (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT,
+                    filename TEXT,
+                    content BYTEA,
+                    encryption_key BYTEA,
+                    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            ''')
+            conn.commit()
+
 @app.route("/")
 def index():
     return render_template("login.html")
 
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
+        # 這是前端 AJAX 提交的 POST 請求
         username = request.form["username"]
         password = request.form["password"]
 
@@ -58,88 +72,82 @@ def register():
         otp_secret = pyotp.random_base32()
 
         try:
-            with get_db_connection() as conn:
+            with get_user_db_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT username FROM users WHERE username = %s;", (username,))
                     if cur.fetchone():
-                        flash("此帳號已註冊")
-                        return redirect(url_for("register"))
+                        return jsonify({"success": False, "error": "該帳號名稱不可用"})
 
                     cur.execute("INSERT INTO users (username, password, otp_secret) VALUES (%s, %s, %s);",
                                 (username, pw_hash, otp_secret))
                     conn.commit()
         except Exception as e:
-            flash("資料庫錯誤：" + str(e))
-            return redirect(url_for("register"))
+            return jsonify({"success": False, "error": "資料庫錯誤：" + str(e)})
 
-        # 產生 QR Code
+        # 成功，產生 QR Code 並轉為 base64
         uri = pyotp.TOTP(otp_secret).provisioning_uri(name=username, issuer_name="MyCloud")
         img = qrcode.make(uri)
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         qr_b64 = base64.b64encode(buf.getvalue()).decode()
 
-        return render_template("show_qr.html", qr_b64=qr_b64, otp_secret=otp_secret)
+        return jsonify({"success": True, "qr_b64": qr_b64})
 
+    # GET 請求時直接回傳 HTML 表單頁面
     return render_template("register.html")
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
+        username = request.form.get("username")
+        password = request.form.get("password")
 
         try:
-            with get_db_connection() as conn:
+            with get_user_db_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT password, otp_secret FROM users WHERE username = %s;", (username,))
+                    cur.execute("SELECT password FROM users WHERE username = %s;", (username,))
                     user = cur.fetchone()
 
             if not user or not bcrypt.checkpw(password.encode(), user["password"].tobytes()):
-                flash("帳密錯誤")
-                return redirect(url_for("login"))
+                return jsonify(success=False, error="帳號密碼錯誤或帳號尚未啟用")
 
             session["username"] = username
-            return redirect(url_for("verify_otp"))
+            return jsonify(success=True)
 
         except Exception as e:
-            flash("登入錯誤：" + str(e))
-            return redirect(url_for("login"))
+            return jsonify(success=False, error="伺服器錯誤，請稍後再試")
 
+    # method == "GET" 時，回傳登入 HTML 頁面
     return render_template("login.html")
 
-@app.route("/verify_otp", methods=["GET", "POST"])
-def verify_otp():
-    if "username" not in session:
-        return redirect(url_for("login"))
 
-    username = session["username"]
+@app.route("/verify_otp", methods=["POST"])
+def verify_otp():
+    username = session.get("username")
+    if not username:
+        return jsonify(success=False, error="尚未登入")
+
+    otp_input = request.form.get("otp")
 
     try:
-        with get_db_connection() as conn:
+        with get_user_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT otp_secret FROM users WHERE username = %s;", (username,))
-                row = cur.fetchone()
-                if not row:
-                    flash("找不到使用者")
-                    return redirect(url_for("login"))
-                otp_secret = row["otp_secret"]
-    except Exception as e:
-        flash("資料庫錯誤：" + str(e))
-        return redirect(url_for("login"))
+                user = cur.fetchone()
 
-    if request.method == "POST":
-        otp_code = request.form["otp"]
-        totp = pyotp.TOTP(otp_secret)
+        if not user:
+            return jsonify(success=False, error="帳號不存在")
 
-        if totp.verify(otp_code):
-            session["authenticated"] = True
-            return redirect(url_for("WebCrypto_API"))
+        totp = pyotp.TOTP(user["otp_secret"])
+        if totp.verify(otp_input):
+            return jsonify(success=True)  # 登入驗證成功！
         else:
-            flash("OTP 錯誤")
-            return redirect(url_for("verify_otp"))
+            return jsonify(success=False, error="驗證碼錯誤")
 
-    return render_template("otp_verification.html")
+    except Exception as e:
+        return jsonify(success=False, error="伺服器錯誤")
+
 
 @app.route("/WebCrypto_API")
 def WebCrypto_API():
@@ -148,9 +156,12 @@ def WebCrypto_API():
 
     # 列出該使用者的檔案
     try:
-        result = cloudinary.api.resources(type="upload", prefix=f"{session['username']}/")
-        files = [res["public_id"].split("/", 1)[-1] for res in result.get("resources", [])]
-    except Exception:
+        with get_userdata_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT filename FROM files WHERE username = %s;", (session["username"],))
+                files = cur.fetchall()
+    except Exception as e:
+        flash("資料庫錯誤：" + str(e))
         files = []
 
     return render_template("WebCrypto_API.html", files=files)
@@ -168,23 +179,43 @@ def upload():
     file = request.files["file"]
     if file:
         filename = secure_filename(file.filename)
-        result = cloudinary.uploader.upload(file, public_id=f"{session['username']}/{filename}")
-        flash("檔案上傳成功")
+        file_data = file.read()
+
+        # 在這裡進行加密處理（假設加密是另一個服務或函式進行的）
+        # 加密後的檔案會傳回給 Flask 應用，並儲存到資料庫中
+        encrypted_data = file_data  # 假設加密過的檔案資料已經處理好了
+
+        try:
+            with get_userdata_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("INSERT INTO files (username, filename, content) VALUES (%s, %s, %s);",
+                                (session["username"], filename, encrypted_data))
+                    conn.commit()
+            flash("檔案上傳成功")
+        except Exception as e:
+            flash("檔案上傳失敗：" + str(e))
+
     return redirect(url_for("WebCrypto_API"))
 
-@app.route("/download", methods=["POST"])
-def download():
+@app.route("/download/<int:file_id>", methods=["GET"])
+def download(file_id):
     if not session.get("authenticated"):
         return redirect(url_for("login"))
 
-    filename = request.form["filename"]
-    public_id = f"{session['username']}/{filename}"
     try:
-        # 取得下載連結
-        result = cloudinary.CloudinaryImage(public_id).build_url()
-        return redirect(result)
-    except Exception:
-        flash("檔案不存在")
+        with get_userdata_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT filename, content FROM files WHERE id = %s;", (file_id,))
+                file = cur.fetchone()
+
+        if file:
+            # 下載的檔案直接返回，這裡假設檔案已經是加密過的
+            return send_file(io.BytesIO(file["content"]), download_name=file["filename"], as_attachment=True)
+        else:
+            flash("檔案不存在")
+            return redirect(url_for("WebCrypto_API"))
+    except Exception as e:
+        flash("下載失敗：" + str(e))
         return redirect(url_for("WebCrypto_API"))
 
 @app.route("/delete", methods=["POST"])
@@ -193,14 +224,18 @@ def delete():
         return redirect(url_for("login"))
 
     filename = request.form["delete_filename"]
-    public_id = f"{session['username']}/{filename}"
     try:
-        cloudinary.uploader.destroy(public_id)
-        flash("檔案已刪除")
-    except Exception:
-        flash("刪除失敗")
+        with get_userdata_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM files WHERE username = %s AND filename = %s;", (session["username"], filename))
+                conn.commit()
+        flash("檔案刪除成功")
+    except Exception as e:
+        flash("刪除失敗：" + str(e))
+
     return redirect(url_for("WebCrypto_API"))
 
 if __name__ == "__main__":
-    init_db()
+    init_user_db()  # 初始化 USERDB 資料庫
+    init_userdata_db()  # 初始化 USERDATADB 資料庫
     app.run(debug=True)

@@ -3,16 +3,113 @@
 <head>
   <meta charset="UTF-8" />
   <title>登入</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+    }
+    .error {
+      color: red;
+      margin-top: 10px;
+    }
+    .hidden {
+      display: none;
+    }
+    /* Modal Style */
+    .modal {
+      display: none;
+      position: fixed;
+      left: 0; top: 0;
+      width: 100%; height: 100%;
+      background-color: rgba(0,0,0,0.4);
+      z-index: 1;
+    }
+    .modal-content {
+      background-color: #fff;
+      margin: 15% auto;
+      padding: 20px;
+      border-radius: 8px;
+      width: 300px;
+      box-shadow: 0 0 10px #000;
+    }
+  </style>
 </head>
 <body>
   <h2>登入頁面</h2>
-  <form action="/login" method="POST">
-    <label for="username">帳號:</label><br />
+  <form id="loginForm" action="/login" method="POST">
+    <label for="username">帳號名稱:</label><br />
     <input type="text" id="username" name="username" required /><br />
     <label for="password">密碼:</label><br />
     <input type="password" id="password" name="password" required /><br />
     <button type="submit">登入</button>
   </form>
+
+  <!-- Error message -->
+  <div id="errorMessage" class="error" style="display: none;"></div>
+
   <p>還沒有帳號? <a href="/register">點此註冊</a></p>
+
+  <!-- OTP Modal -->
+  <div id="otpModal" class="modal">
+    <div class="modal-content">
+      <h3>請輸入二階段驗證碼</h3>
+      <form id="otpForm">
+        <input type="text" id="otp" name="otp" placeholder="六位數 OTP" required />
+        <button type="submit">驗證</button>
+        <div id="otpError" class="error"></div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const otpModal = document.getElementById("otpModal");
+    const errorMessageDiv = document.getElementById("errorMessage");
+
+    // 提交登入表單
+    document.getElementById("loginForm").addEventListener("submit", async function(e) {
+      e.preventDefault();
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+
+      const res = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ username, password })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        // 登入成功，顯示 OTP 驗證框
+        otpModal.style.display = "block";
+      } else {
+        // 顯示錯誤訊息
+        errorMessageDiv.innerText = data.error;
+        errorMessageDiv.style.display = "block";
+      }
+    });
+
+    // 提交 OTP 表單
+    document.getElementById("otpForm").addEventListener("submit", async function(e) {
+      e.preventDefault();
+      const otp = document.getElementById("otp").value;
+
+      const res = await fetch("/verify_otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ otp })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        window.location.href = "/WebCrypto_API";  // 驗證成功後跳轉
+      } else {
+        // 驗證失敗：關閉 OTP modal 並清空 OTP 欄位
+        otpModal.style.display = "none";
+        document.getElementById("otp").value = "";
+        errorMessageDiv.innerText = "驗證碼錯誤";
+        errorMessageDiv.style.display = "block";
+      }
+    });
+  </script>
 </body>
 </html>
