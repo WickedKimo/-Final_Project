@@ -46,15 +46,15 @@ def init_userdata_db():
         with conn.cursor() as cur:
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS files (
-                    id SERIAL PRIMARY KEY,
-                    username TEXT,
+                    username TEXT PRIMARY KEY,
                     filename TEXT,
                     content BYTEA,
-                    encryption_key BYTEA,
+                    encrypted_private BYTEA,
                     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             ''')
             conn.commit()
+
 
 @app.route("/")
 def index():
@@ -124,6 +124,7 @@ def login():
 
 @app.route("/verify_otp", methods=["POST"])
 def verify_otp():
+    print("Session received username:", session.get("username"))
     username = session.get("username")
     if not username:
         return jsonify(success=False, error="尚未登入")
@@ -141,6 +142,7 @@ def verify_otp():
 
         totp = pyotp.TOTP(user["otp_secret"])
         if totp.verify(otp_input):
+            session["authenticated"] = True  # ✅ 登入驗證完成，設為 True
             return jsonify(success=True)  # 登入驗證成功！
         else:
             return jsonify(success=False, error="驗證碼錯誤")
@@ -164,12 +166,14 @@ def WebCrypto_API():
         flash("資料庫錯誤：" + str(e))
         files = []
 
-    return render_template("WebCrypto_API.html", files=files)
+    return render_template("WebCrypto_API.html", files=files, username=session["username"])
 
-@app.route("/logout", methods=["POST"])
+
+@app.route("/logout", methods=["GET"])
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
 
 @app.route("/upload", methods=["POST"])
 def upload():
