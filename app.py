@@ -9,6 +9,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
+from kms import kms_bp
+
 load_dotenv()
 
 
@@ -17,6 +19,7 @@ USERDB_URL = os.environ.get("USERDB_URL")
 USERDATADB_URL = os.environ.get("USERDATADB_URL")
 
 app = Flask(__name__)
+app.register_blueprint(kms_bp)
 app.secret_key = "secret"
 
 # 用於 USERDB 的資料庫連線
@@ -46,7 +49,8 @@ def init_userdata_db():
         with conn.cursor() as cur:
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS files (
-                    username TEXT PRIMARY KEY,
+                    id SERIAL PRIMARY KEY,
+                    username TEXT,
                     filename TEXT,
                     content BYTEA,
                     encrypted_private BYTEA,
