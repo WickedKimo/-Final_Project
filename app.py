@@ -13,11 +13,13 @@ from psycopg2.extras import RealDictCursor
 from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 load_dotenv()
+from kms import init_kms_db, generate_and_store_keys, get_private_key
 
 
 # 連線到 PostgreSQL（Render 提供 USERDB_URL 和 USERDATADB_URL）
 USERDB_URL = os.environ.get("USERDB_URL")
 USERDATADB_URL = os.environ.get("USERDATADB_URL")
+KMSDB_URL = os.environ.get("KMSDB_URL")
 
 app = Flask(__name__)
 app.secret_key = "secret"
@@ -29,6 +31,9 @@ def get_user_db_connection():
 # 用於 USERDATADB 的資料庫連線
 def get_userdata_db_connection():
     return psycopg2.connect(USERDATADB_URL, cursor_factory=RealDictCursor)
+
+def get_kms_db_connection():
+    return psycopg2.connect(KMSDB_URL, cursor_factory=RealDictCursor)
 
 # 初始化 USERDB 資料表
 def init_user_db():
@@ -61,6 +66,18 @@ def init_userdata_db():
             ''')
             conn.commit()
 
+# 初始化 KMSDB 資料表
+def init_kms_db():
+    with get_kms_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS kms_keys (
+                    username TEXT PRIMARY KEY,
+                    private_key BYTEA NOT NULL,
+                    public_key BYTEA NOT NULL
+                );
+            ''')
+            conn.commit()
 
 @app.route("/")
 def index():
@@ -106,6 +123,7 @@ def register():
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         qr_b64 = base64.b64encode(buf.getvalue()).decode()
+        generate_and_store_keys(username)
 
         return jsonify({"success": True, "qr_b64": qr_b64})
 
@@ -288,26 +306,65 @@ def get_kms_key():
         print("❌ 簽章驗證失敗")
         return jsonify({"success": False, "error": "簽章驗證失敗"})
 
-@app.route("/download/<int:file_id>", methods=["GET"])
-def download(file_id):
+
+
+# 添加获取私钥的路由
+@app.route('/get_private_key', methods=['POST'])
+def handle_private_key_request():
+    if not session.get("authenticated"):
+        return jsonify({"success": False, "error": "未认证"})
+    
+    username = session["username"]
+    data = request.get_json()
+    
+    try:
+        signature = base64.b64decode(data["signature"])
+        message = data["message"].encode()
+        
+        # 这里应该添加签名验证逻辑
+        # 验证通过后才返回私钥
+        
+        private_key = get_private_key(username, signature, message)
+        if not private_key:
+            return jsonify({"success": False, "error": "密钥不存在"})
+            
+        return jsonify({
+            "success": True,
+            "private_key": private_key.decode()
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+
+# 添加文件下载路由
+@app.route("/download/<filename>", methods=["GET"])
+def download_file(filename):
     if not session.get("authenticated"):
         return redirect(url_for("login"))
-
+    
+    username = session["username"]
+    
     try:
         with get_userdata_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT filename, content FROM files WHERE id = %s;", (file_id,))
-                file = cur.fetchone()
-
-        if file:
-            # 下載的檔案直接返回，這裡假設檔案已經是加密過的
-            return send_file(io.BytesIO(file["content"]), download_name=file["filename"], as_attachment=True)
-        else:
-            flash("檔案不存在")
-            return redirect(url_for("WebCrypto_API"))
+                cur.execute(
+                    "SELECT content, encrypted_private, nonce FROM files WHERE username = %s AND filename = %s;",
+                    (username, filename)
+                )
+                file_data = cur.fetchone()
+                
+        if not file_data:
+            return jsonify({"success": False, "error": "文件不存在"})
+            
+        return jsonify({
+            "success": True,
+            "content": list(file_data["content"].tobytes()),
+            "encrypted_private": list(file_data["encrypted_private"].tobytes()),
+            "nonce": list(file_data["nonce"].tobytes())
+        })
     except Exception as e:
-        flash("下載失敗：" + str(e))
-        return redirect(url_for("WebCrypto_API"))
+        return jsonify({"success": False, "error": str(e)})
 
 @app.route("/delete", methods=["POST"])
 def delete():
@@ -329,4 +386,5 @@ def delete():
 if __name__ == "__main__":
     init_user_db()  # 初始化 USERDB 資料庫
     init_userdata_db()  # 初始化 USERDATADB 資料庫
+    init_kms_db()  # 初始化KMS数据库
     app.run(debug=True)
