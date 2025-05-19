@@ -7,7 +7,9 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography import x509
 from dotenv import load_dotenv
+
 
 load_dotenv()
 
@@ -147,20 +149,16 @@ def get_wrapped_AES():
                 row = cur.fetchone()
                 if not row:
                     return jsonify({"success": False, "error": "KMS 私鑰不存在"})
-                pem_str = bytes(row[0])  # still in bytes
- 
+                pem_bytes = bytes(row[0])  # still in bytes
+
                 # 2. 載入 KMS 私鑰
                 kms_private_key = serialization.load_pem_private_key(
-                    pem_str,
+                    pem_bytes,
                     password=None
                 )
 
-                print(f"kms_private_key={kms_private_key}")
-
                 # 3. 解 base64 成原始加密內容（bytes）
                 encrypted_private = base64.b64decode(encrypted_private_b64)
-
-                print(f"encrypted_private={encrypted_private}")
 
                 # 4. 用 KMS 私鑰解密
                 decrypted = kms_private_key.decrypt(
@@ -172,13 +170,11 @@ def get_wrapped_AES():
                     )
                 )
 
-                print(f"decrypted={decrypted}")
+                # 5. 載入使用者的 public key（DER 格式，無頭尾）
+                user_public_der = base64.b64decode(user_public_key_b64)
+                user_public_key = serialization.load_der_public_key(user_public_der)
 
-                # 5. 載入使用者的 public key（PEM 格式）
-                user_public_pem = base64.b64decode(user_public_key_b64)
-                user_public_key = serialization.load_pem_public_key(user_public_pem)
-
-                # 6. 用使用者的 public key 加密解密後的結果
+                 # 6. 用使用者的 public key 加密解密後的結果
                 re_encrypted = user_public_key.encrypt(
                     decrypted,
                     padding.OAEP(
@@ -187,8 +183,6 @@ def get_wrapped_AES():
                         label=None
                     )
                 )
-
-                print(f"re_encrypted={re_encrypted}")
 
                 # 7. base64 回傳
                 return jsonify({

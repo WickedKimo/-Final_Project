@@ -197,25 +197,15 @@ def logout():
 
 @app.route("/upload", methods=["POST"])
 def upload():
-
-    print('2')
-
     data = request.get_json()
     filename = data.get("filename")
-    enc_file_content = data.get("enc_file_content")
-    enc_data_key = data.get("enc_data_key")
-    nonce = data.get("nonce")
+    enc_file_content = base64.b64decode(data['enc_file_content'])
+    enc_data_key = base64.b64decode(data['enc_data_key'])
+    nonce = base64.b64decode(data['nonce'])
 
     username = session.get("username")
     if not username:
         return jsonify({"status": "error", "message": "未登入"}), 401
-
-    print('3')
-
-    # 轉換成 bytes
-    enc_file_content_bytes = bytes(enc_file_content)
-    enc_data_key_bytes = bytes(enc_data_key)
-    nonce_bytes = bytes(nonce)
 
     try:
         with get_userdata_db_connection() as conn:
@@ -225,13 +215,12 @@ def upload():
                     return jsonify({"success": False, "error": "檔名重複"})
                 cur.execute(
                     "INSERT INTO files (username, filename, content, encrypted_private, nonce) VALUES (%s, %s, %s, %s, %s);",
-                    (username, filename, enc_file_content_bytes, enc_data_key_bytes, nonce_bytes)
+                    (username, filename, enc_file_content, enc_data_key, nonce)
                 )
                 conn.commit()
 
-                print('4')
-
         return jsonify({"status": "success","success": True})
+    
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
@@ -294,7 +283,6 @@ def get_kms_key():
 
 @app.route("/download/<filename>", methods=["POST"])
 def download_file(filename):
-
     if not session.get("authenticated"):
         return redirect(url_for("login"))
     username = session["username"]
@@ -307,11 +295,10 @@ def download_file(filename):
                 result = cur.fetchone()
                 user_pub_key = result["public_key"]  # base64 格式的公鑰字串
 
-
         data = request.get_json()
         data["username"] = username
         data["user_public_key"] = user_pub_key
-        
+
         # 發送請求到 KMS 的簽章驗證路由
         verify_response = requests.post(
             "http://localhost:6000/kms_verify_signature",
@@ -337,15 +324,11 @@ def download_file(filename):
             cookies=request.cookies,
         )
 
-        print(file_data["content"])
-        print(kms_response.json().get("wrapped_key"))
-        print(file_data["nonce"])
-
         return jsonify({
             "success": True,
-            "content": file_data["content"],
+            "content": base64.b64encode(file_data["content"].tobytes()).decode(),
             "encrypted_private": kms_response.json().get("wrapped_key"),
-            "nonce": file_data["nonce"]
+            "nonce": base64.b64encode(file_data["nonce"].tobytes()).decode()
         })
     
     except Exception as e:
