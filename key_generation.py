@@ -21,7 +21,7 @@ pem = public_key.public_bytes(
 )
 
 # 將公鑰寫入 static/public_key.txt
-with open('static/public_key.txt', 'wb') as f:
+with open('static/kms_public_key.pem', 'wb') as f:
     f.write(pem)
 
 print("✅ 公鑰已寫入 static/public_key.txt！")

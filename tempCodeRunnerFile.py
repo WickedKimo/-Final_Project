@@ -1,0 +1,1 @@
+static/kms_public_key.pem
