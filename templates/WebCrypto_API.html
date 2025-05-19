@@ -57,6 +57,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="header">
     <div><strong>歡迎，{{ session['username'] }}！</strong></div>
@@ -255,6 +256,123 @@
 
       reader.readAsArrayBuffer(file);
     }
+
+    async function downloadFile(filename) {
+      const output = document.getElementById("output");
+      output.textContent = "正在准备下载文件...\n";
+      
+      try {
+        // 1. 获取当前用户的私钥
+        const privateKey = await getPrivateKeyFromLocalStorage();
+        const message = new TextEncoder().encode("Request private key for download");
+        const signature = await window.crypto.subtle.sign(
+          { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+          privateKey,
+          message
+        );
+        
+        // 2. 向服务器请求KMS私钥
+        const keyRes = await fetch('/get_private_key', {
+          method: 'POST',
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            signature: Array.from(new Uint8Array(signature)),
+            message: "Request private key for download"
+          })
+        });
+        
+        const keyData = await keyRes.json();
+        if (!keyData.success) {
+          throw new Error("获取私钥失败: " + keyData.error);
+        }
+        
+        // 3. 导入KMS私钥
+        const kmsPrivateKey = await importPrivateKey(keyData.private_key);
+        
+        // 4. 获取加密的文件数据
+        const fileRes = await fetch(`/download/${encodeURIComponent(filename)}`);
+        const fileData = await fileRes.json();
+        
+        if (!fileData.success) {
+          throw new Error("获取文件失败: " + fileData.error);
+        }
+        
+        // 5. 解密数据密钥
+        const encryptedKey = new Uint8Array(fileData.encrypted_private);
+        const aesKey = await window.crypto.subtle.unwrapKey(
+          "raw",
+          encryptedKey,
+          kmsPrivateKey,
+          { name: "RSA-OAEP" },
+          { name: "AES-GCM", length: 256 },
+          true,
+          ["decrypt"]
+        );
+        
+        // 6. 解密文件内容
+        const iv = new Uint8Array(fileData.nonce);
+        const ciphertext = new Uint8Array(fileData.content);
+        
+        const decrypted = await window.crypto.subtle.decrypt(
+          { name: "AES-GCM", iv: iv },
+          aesKey,
+          ciphertext
+        );
+        
+        // 7. 创建下载链接
+        const blob = new Blob([decrypted]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        output.textContent += "✅ 文件下载完成\n";
+      } catch (error) {
+        output.textContent += `❌ 下载失败: ${error.message}\n`;
+        console.error(error);
+      }
+    }
+
+
+    async function importPrivateKey(pem) {
+      const pemHeader = "-----BEGIN PRIVATE KEY-----";
+      const pemFooter = "-----END PRIVATE KEY-----";
+      
+      const pemContents = pem.substring(
+        pem.indexOf(pemHeader) + pemHeader.length,
+        pem.indexOf(pemFooter)
+      ).replace(/\s+/g, '');
+      
+      const binaryDerString = window.atob(pemContents);
+      const binaryDer = new Uint8Array(binaryDerString.length);
+      for (let i = 0; i < binaryDerString.length; i++) {
+        binaryDer[i] = binaryDerString.charCodeAt(i);
+      }
+      
+      return await window.crypto.subtle.importKey(
+        "pkcs8",
+        binaryDer,
+        { name: "RSA-OAEP", hash: "SHA-256" },
+        false,
+        ["unwrapKey"]
+      );
+    }
+
+
   </script>
 </body>
+<table>
+  {% for file in files %}
+    <tr>
+      <td>{{ file.filename }}</td>
+      <td>
+        <button onclick="downloadFile('{{ file.filename }}')">下载</button>
+      </td>
+    </tr>
+  {% endfor %}
+</table>
 </html>
