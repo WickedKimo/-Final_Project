@@ -173,7 +173,7 @@ def get_wrapped_AES():
                 user_public_der = base64.b64decode(user_public_key_b64)
                 user_public_key = serialization.load_der_public_key(user_public_der)
 
-                 # 6. 用使用者的 public key 加密解密後的結果
+                # 6. 用使用者的 public key 加密解密後的結果
                 re_encrypted = user_public_key.encrypt(
                     decrypted,
                     padding.OAEP(
