@@ -120,7 +120,7 @@
       const output = document.getElementById("output");
       try {
         const { privateKeySign } = await getPrivateKeysFromLocalStorage();
-        console.log("Private Key 是：", privateKey);
+        console.log("Private Key 是：", privateKeySign);
 
         const aesKey = await window.crypto.subtle.generateKey(
           { name: "AES-GCM", length: 256 },

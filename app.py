@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session, url_for, flash, jsonify, send_file  #新增 send_file
+from flask import Flask, render_template, request, redirect, session, url_for, flash, jsonify
 import pyotp
 import bcrypt
 import qrcode
@@ -6,11 +6,8 @@ import base64
 import io
 import os
 import psycopg2
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.exceptions import InvalidSignature
 from psycopg2.extras import RealDictCursor
-from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import requests
 
