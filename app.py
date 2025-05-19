@@ -332,22 +332,51 @@ def download_file(filename):
         return jsonify({"success": False, "error": str(e)})
 
 
-@app.route("/delete", methods=["POST"])
-def delete():
+@app.route("/delete/<filename>", methods=["POST"])
+def delete_file(filename):
     if not session.get("authenticated"):
-        return redirect(url_for("login"))
+        return jsonify({"success": False, "error": "未登入"}), 401
 
-    filename = request.form["delete_filename"]
+    username = session["username"]
+    if not username:
+        return jsonify({"success": False, "error": "未登入使用者"}), 401
+
     try:
+        # 驗證簽章
+        with get_user_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT public_key FROM users WHERE username = %s;", (username,))
+                result = cur.fetchone()
+                if not result:
+                    return jsonify({"success": False, "error": "使用者不存在"})
+                user_pub_key = result["public_key"]
+
+        data = request.get_json()
+        data["username"] = username
+        data["user_public_key"] = user_pub_key
+
+        verify_response = requests.post(
+            "http://localhost:6000/kms_verify_signature",
+            json=data,
+            cookies=request.cookies
+        )
+
+        if not verify_response.ok:
+            return jsonify({"success": False, "error": "簽章驗證失敗"})
+
+        # 刪除檔案
         with get_userdata_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM files WHERE username = %s AND filename = %s;", (session["username"], filename))
+                cur.execute(
+                    "DELETE FROM files WHERE username = %s AND filename = %s;",
+                    (username, filename)
+                )
                 conn.commit()
-        flash("檔案刪除成功")
-    except Exception as e:
-        flash("刪除失敗：" + str(e))
 
-    return redirect(url_for("WebCrypto_API"))
+        return jsonify({"success": True, "message": f"檔案 {filename} 已刪除"})
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == "__main__":
     init_user_db()
