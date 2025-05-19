@@ -55,6 +55,20 @@
     .logout-btn:hover {
       background-color: #c0392b;
     }
+    button.delete-btn {
+      padding: 6px 12px;
+      font-size: 14px;
+      background-color: #e74c3c;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-left: 5px;
+    }
+
+    button.delete-btn:hover {
+      background-color: #c0392b;
+    }
   </style>
 </head>
 
@@ -393,6 +407,46 @@
         ["unwrapKey"]
       );
     }
+    
+    async function deleteFile(filename) {
+      const output = document.getElementById("output");
+      if (!confirm(`確定要刪除檔案 ${filename} 嗎？`)) {
+        return;
+      }
+
+      try {
+        // 獲取私鑰用於簽章
+        const { privateKeySign } = await getPrivateKeysFromLocalStorage();
+        
+        // 簽署刪除請求
+        const message = new TextEncoder().encode(`Delete file: ${filename}`);
+        const signature = await window.crypto.subtle.sign(
+          { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+          privateKeySign,
+          message
+        );
+
+        const response = await fetch(`/delete/${filename}`, {
+          method: 'POST',
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            signature: Array.from(new Uint8Array(signature)),
+            message: `Delete file: ${filename}`
+          })
+        });
+
+        const result = await response.json();
+        if (result.success) {
+          output.textContent += `✅ 檔案 ${filename} 已刪除\n`;
+          location.reload(); // 刷新頁面更新列表
+        } else {
+          output.textContent += `❌ 刪除失敗: ${result.error}\n`;
+        }
+      } catch (error) {
+        output.textContent += `❌ 刪除過程中發生錯誤: ${error.message}\n`;
+        console.error(error);
+      }
+    }
 
 
   </script>
@@ -403,6 +457,7 @@
       <td>{{ file.filename }}</td>
       <td>
         <button onclick="downloadFile('{{ file.filename }}')">下載</button>
+        <button onclick="deleteFile('{{ file.filename }}')" style="background-color: #e74c3c; margin-left: 5px;">刪除</button>
       </td>
     </tr>
   {% endfor %}
