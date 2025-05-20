@@ -93,6 +93,7 @@ def get_kms_public_key():
 
 @kms.route('/kms_verify_signature', methods=['POST'])
 def route_verify_signature():
+    
     data = request.get_json()
 
     signature_data = data.get("signature")

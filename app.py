@@ -16,6 +16,7 @@ load_dotenv()
 # 連線到 PostgreSQL（Render 提供 USERDB_URL 和 USERDATADB_URL）
 USERDB_URL = os.environ.get("USERDB_URL")
 USERDATADB_URL = os.environ.get("USERDATADB_URL")
+KMS_URL = os.environ.get("KMS_URL", "http://localhost:6000")
 
 app = Flask(__name__)
 app.secret_key = "secret"
@@ -141,7 +142,6 @@ def login():
 
 @app.route("/verify_otp", methods=["POST"])
 def verify_otp():
-    print("Session received username:", session.get("username"))
     username = session.get("username")
     if not username:
         return jsonify(success=False, error="尚未登入")
@@ -238,24 +238,27 @@ def get_kms_key():
                     return jsonify({"success": False, "error": "使用者不存在"})
                 user_pub_key = result["public_key"]  # base64 格式的公鑰字串
 
+
         # 將 public_key 加入 data dict 中
         data = request.get_json()
         data["username"] = username            # 可選：提供 username 給 KMS 做紀錄
         data["user_public_key"] = user_pub_key
 
+
         # 發送請求到 KMS 的簽章驗證路由
         verify_response = requests.post(
-            "http://localhost:6000/kms_verify_signature",
+            f"{KMS_URL}/kms_verify_signature",
             json=data,
             cookies=request.cookies
         )
+
 
         if not verify_response.ok:
             return jsonify(verify_response.json())
 
         # 驗證成功後，再取得 KMS 公鑰
         kms_response = requests.post(
-            "http://localhost:6000/kms_public_key",
+            f"{KMS_URL}/kms_public_key",
             json=data,
             cookies=request.cookies
         )
@@ -298,7 +301,7 @@ def download_file(filename):
 
         # 發送請求到 KMS 的簽章驗證路由
         verify_response = requests.post(
-            "http://localhost:6000/kms_verify_signature",
+            f"{KMS_URL}/kms_verify_signature",
             json=data,
             cookies=request.cookies
         )
@@ -316,7 +319,7 @@ def download_file(filename):
         data["encrypted_private"] = base64.b64encode(file_data["encrypted_private"].tobytes()).decode()
 
         kms_response = requests.post(
-            "http://localhost:6000/kms_wrapped_AES",
+            f"{KMS_URL}/kms_wrapped_AES",
             json=data,
             cookies=request.cookies,
         )
@@ -342,28 +345,6 @@ def delete_file(filename):
         return jsonify({"success": False, "error": "未登入使用者"}), 401
 
     try:
-        # 驗證簽章
-        with get_user_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT public_key FROM users WHERE username = %s;", (username,))
-                result = cur.fetchone()
-                if not result:
-                    return jsonify({"success": False, "error": "使用者不存在"})
-                user_pub_key = result["public_key"]
-
-        data = request.get_json()
-        data["username"] = username
-        data["user_public_key"] = user_pub_key
-
-        verify_response = requests.post(
-            "http://localhost:6000/kms_verify_signature",
-            json=data,
-            cookies=request.cookies
-        )
-
-        if not verify_response.ok:
-            return jsonify({"success": False, "error": "簽章驗證失敗"})
-
         # 刪除檔案
         with get_userdata_db_connection() as conn:
             with conn.cursor() as cur:
