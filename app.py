@@ -378,7 +378,8 @@ def delete_file(filename):
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+
 if __name__ == "__main__":
     init_user_db()
     init_userdata_db()
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

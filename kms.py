@@ -194,4 +194,4 @@ def get_wrapped_AES():
 
 if __name__ == "__main__":
     init_kms_db()
-    kms.run(port=6000)
+    kms.run(host="0.0.0.0", port=int(os.environ.get("PORT", 6000)))
