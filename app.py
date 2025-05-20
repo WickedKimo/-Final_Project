@@ -100,7 +100,7 @@ def register():
             return jsonify({"success": False, "error": "資料庫錯誤：" + str(e)})
 
         # 註冊成功後，嘗試產生 KMS key pair（若不存在）
-        requests.post("http://localhost:6000/kms_register", json=data)
+        requests.post(f"{KMS_URL}/kms_register", json=data)
 
         # 成功，產生 QR Code 並轉為 base64
         uri = pyotp.TOTP(otp_secret).provisioning_uri(name=username, issuer_name="MyCloud")
